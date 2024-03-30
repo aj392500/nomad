@@ -1,0 +1,59 @@
+---
+- name: Setup Nomad cluster
+  hosts: nomad_nodes
+  become: yes
+  vars:
+    nomad_version: "1.1.2"
+    nomad_data_dir: "/opt/nomad/data"
+    nomad_config_dir: "/etc/nomad"
+    nomad_server: false
+    nomad_client: true
+    nomad_bootstrap_expect: 2  # Number of server nodes in the cluster
+    nomad_datacenter: "dc1"
+    nomad_server_port: 4647
+    nomad_client_port: 4646
+  tasks:
+    - name: Update package cache and install dependencies
+      yum:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - unzip
+        - curl
+
+    - name: Download and install Nomad
+      get_url:
+        url: "https://releases.hashicorp.com/nomad/{{ nomad_version }}/nomad_{{ nomad_version }}_linux_amd64.zip"
+        dest: "/tmp/nomad_{{ nomad_version }}.zip"
+      notify: Extract Nomad
+
+    - name: Configure Nomad directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+      loop:
+        - "{{ nomad_data_dir }}"
+        - "{{ nomad_config_dir }}"
+
+    - name: Copy Nomad configuration file
+      template:
+        src: nomad.hcl.j2
+        dest: "{{ nomad_config_dir }}/nomad.hcl"
+      notify: Restart Nomad
+
+  handlers:
+    - name: Extract Nomad
+      unarchive:
+        src: "/tmp/nomad_{{ nomad_version }}.zip"
+        dest: "/usr/local/bin"
+        remote_src: yes
+        creates: "/usr/local/bin/nomad"
+      become: yes
+
+    - name: Restart Nomad
+      systemd:
+        name: nomad
+        state: restarted
